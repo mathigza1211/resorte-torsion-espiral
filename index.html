@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador v1.4 — Resorte espiral nanomecánico</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--accent:#5ec8d8;--accent2:#e8985e;--text:#e7e9ee;--muted:#9aa1ac;--border:#262b35}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Helvetica Neue',Arial,sans-serif;padding:20px 14px 48px}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:19px;margin:0 0 4px;color:#fff}
+.sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:12px}
+canvas{width:100%;display:block;background:#0a0c10;border-radius:6px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+button{background:var(--accent);color:#0f1115;border:none;border-radius:6px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}
+button.s{background:transparent;border:1px solid var(--border);color:var(--muted)}
+button.s.on{border-color:var(--accent);color:var(--accent)}
+.ctl{flex:1 1 200px;font-size:12px;color:var(--muted)}
+.ctl b{color:var(--text)}
+select{background:#0d0f14;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;font-size:12.5px}
+input[type=range]{width:100%;accent-color:#5ec8d8}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+td,th{border:1px solid var(--border);padding:5px 6px;text-align:center;color:var(--muted)}
+th{color:var(--accent)} td.v{color:var(--text)}
+h2{font-size:15px;margin:2px 0 8px;color:#fff}
+details{border-top:1px solid var(--border);padding:8px 2px}
+details:first-of-type{border-top:none}
+summary{cursor:pointer;font-weight:700;font-size:13.5px;color:var(--accent);padding:4px 0}
+details p,details li{font-size:13px;line-height:1.6;color:#cfd3da;margin:6px 0}
+details ul{padding-left:20px;margin:6px 0}
+.eq{background:#0d0f14;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;padding:8px 12px;margin:8px 0;font-size:14px;overflow-x:auto;font-family:Georgia,serif;color:#e7e9ee}
+.warn{background:rgba(193,124,143,.1);border:1px solid rgba(193,124,143,.4);border-radius:6px;padding:9px 12px;font-size:12.5px;color:#e3c3cc;margin:8px 0;line-height:1.55}
+.warn b{color:#e59ab0}
+.note{font-size:12.5px;color:#d9c3ab;background:rgba(232,152,94,.08);border:1px solid rgba(232,152,94,.3);border-radius:6px;padding:10px 12px;line-height:1.55}
+.note b{color:var(--accent2)}
+.big{font-size:14px;color:#fff;margin:4px 2px}
+.big b{color:var(--accent2)}
+.leg{font-size:11.5px;color:var(--muted);margin-top:4px}
+</style></head><body><div class="wrap">
+<h1>Resorte espiral nanomecánico — simulador v1.4</h1>
+<div class="sub">Mathias Zárate Amenero · desarrollado junto con Claude (Anthropic) · Lima, Perú. Una espiral delgada de silicio (o nitruro) sujeta por fuera y unida por dentro a un disco se comporta como un resorte de torsión: el par es proporcional al ángulo, con constante k = EI/L. Este simulador calcula k, la frecuencia, el ruido térmico y hasta qué ángulo se puede girar antes de que las vueltas se toquen o el material se pase de su límite. Hipótesis de diseño; no hay dispositivo ni medición.</div>
+
+<div class="panel">
+  <div class="big" id="head"></div>
+  <canvas id="cs" width="860" height="440" style="aspect-ratio:860/440"></canvas>
+  <div class="leg">La forma se calcula con la elástica completa (barra delgada con grandes deformaciones; extremo exterior fijo, extremo interior girado Δφ alrededor del eje). Azul: sin contacto. Rojo: las vueltas se tocan (el modelo deja de valer). El contacto aparece casi siempre entre el extremo exterior fijo y la vuelta vecina.</div>
+  <div class="row"><div class="ctl">Ángulo girado del disco interior Δφ: <b id="dpv">0.00</b> rad (<b id="dpt">0.00</b> vueltas)<input type="range" id="dphi" min="-12" max="12" step="0.05" value="0"></div></div>
+</div>
+
+<div class="panel">
+  <canvas id="cm" width="860" height="250" style="aspect-ratio:860/250"></canvas>
+  <div class="leg">Par M contra ángulo. Línea azul: ley lineal M = kΔφ; puntos celestes: par calculado con la elástica completa. Zonas rojas: más allá del contacto entre vueltas. Zona naranja: más allá del límite del material. Punto: tu ángulo actual.</div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <button class="s on" data-mat="si">Silicio (100): E efectivo = 147 GPa</button>
+    <button class="s" data-mat="sin">Nitruro de silicio (E = 250 GPa)</button>
+  </div>
+  <div class="row">
+    <div class="ctl">Vueltas N: <b id="Nv">5</b><input type="range" id="N" min="2" max="10" step="0.5" value="5"></div>
+    <div class="ctl">Radio exterior R (µm): <b id="Rv">2.0</b><input type="range" id="R" min="0.5" max="20" step="0.1" value="2"></div>
+    <div class="ctl">Paso p entre vueltas (nm): <b id="pv">300</b><input type="range" id="p" min="60" max="2000" step="10" value="300"></div>
+    <div class="ctl">Variación del paso c, p(u) = p·(1 + c·u), u = vueltas desde el interior: <b id="cv2">0.00</b><input type="range" id="C" min="-0.15" max="0.5" step="0.05" value="0"></div>
+  </div>
+  <div class="row">
+    <div class="ctl">Ancho del hilo w en el plano (nm): <b id="wv">100</b><input type="range" id="w" min="20" max="600" step="5" value="100"></div>
+    <div class="ctl">Altura del hilo h fuera del plano (nm): <b id="hv">100</b><input type="range" id="h" min="20" max="1000" step="5" value="100"></div>
+  </div>
+  <div class="row">
+    <div class="ctl">Radio del disco útil r_d (µm), encima del plano: <b id="rdv">2.0</b><input type="range" id="rd" min="0.1" max="10" step="0.1" value="2"></div>
+    <div class="ctl">Espesor del disco (nm): <b id="tdv">200</b><input type="range" id="td" min="20" max="1000" step="5" value="200"></div>
+  </div>
+  <div class="row">
+    <div class="ctl">Temperatura (K): <b id="Kv">300</b><input type="range" id="Tk" min="1" max="400" step="1" value="300"></div>
+    <div class="ctl">Factor de calidad Q (supuesto): <b id="Qv">10000</b><input type="range" id="Q" min="2" max="6" step="0.1" value="4"></div>
+    <div class="ctl">Coeficiente de fricción entre vueltas μ (propuesto, no medido): <b id="muv">0.0</b><input type="range" id="mu" min="0" max="1" step="0.1" value="0"></div>
+  </div>
+  <table><tbody id="tcal"></tbody></table>
+  <div class="note" id="pnote"></div>
+</div>
+
+<div class="panel">
+<h2>Qué es esto y para qué sirve</h2>
+<details open><summary>La idea en dos líneas</summary>
+<p>Un resorte espiral (como el de un reloj mecánico) guarda energía al torcerse. A escala nanométrica el mismo diseño daría un resonador de torsión muy sensible: su rigidez sale de la fórmula clásica k = EI/L y su frecuencia de la inercia del disco. La hipótesis es que la geometría (vueltas, paso, ancho) fija de forma simple el rango útil, que termina cuando las vueltas se tocan o el material llega a su límite.</p></details>
+<details><summary>¿Con qué fin?</summary><ul>
+<li>Estimar k, la frecuencia de resonancia y el ruido térmico para un diseño concreto.</li>
+<li>Ver el rango de ángulo antes del contacto entre vueltas y antes de la rotura.</li>
+<li>Entender qué parámetro manda en cada límite.</li></ul></details>
+<div class="warn"><b>Novedades v1.4 (informe v1.11):</b> control de fricción μ entre vueltas: con la fricción de Coulomb el par después del contacto sube poco (≤ 4 % a −6 rad hasta μ = 0.5; 10 % con μ = 1) y un ciclo disipa ≈ 2 % de la energía; la convergencia del cálculo es solo parcial y vale solo para la espiral de referencia. <b>Novedades v1.3 (informe v1.5):</b> paso variable (control c: no cambia la linealidad, sí el contacto; con c > 0 el contacto al aflojar se amplía, con c < 0 se acorta); modos con un modelo de vigas en 3D (el vertical queda por debajo de f₀ con hilo cuadrado, con margen de solo 12–14 % por encima con h > w); contacto distribuido sin fricción (las vueltas se deslizan y la rigidez no aumenta después del primer contacto). <b>Límites:</b> (1) La ley k = EI/L y los resortes espirales de reloj son física conocida; el cálculo con la elástica completa de este trabajo la confirma con desviaciones de −4 % a +6 % en la espiral de referencia (5 vueltas) y de hasta 14 % en otras proporciones (no es un resultado nuevo). (2) El extremo exterior se supone empotrado y el interior unido a un cubo de radio r_in que gira; el contacto sale del extremo exterior y depende de ese empotramiento (un tope de tamaño finito lo cambiaría). Con la espiral de referencia, la elástica del simulador y la resolución independiente en Python coinciden (8.4 y −3.2 rad); las otras proporciones (3 y 8 vueltas, p/R de 0.1 a 0.25) se calcularon solo en Python, y el rango de contacto cambia mucho con ellas. (3) El contacto se trata como un tope duro; a escala nanométrica las vueltas que se tocan pueden quedar pegadas (adhesión), lo que arruinaría el resorte. (4) El límite del material (2 % de deformación) y Q son supuestos, no datos medidos. (5) La inercia efectiva del resorte (0.19 de la de giro rígido, factor obtenido con la elástica solo para la espiral de referencia) se suma a la del disco; el disco se supone encima del plano de la espiral. Los modos vertical y de inclinación son estimaciones de orden de magnitud (Castigliano, sin acoplamientos), con constantes del silicio (100). (6) No hay fabricación ni medición.</div>
+<details><summary>Ecuaciones</summary>
+<div class="eq">Rigidez de torsión: &nbsp; k = E I / L , &nbsp; I = h w³ / 12 &nbsp; (flexión en el plano)</div>
+<div class="eq">Longitud de la espiral: &nbsp; L = ∫ √(r² + b²) dθ , &nbsp; r = r_in + bθ , &nbsp; b = p/2π</div>
+<div class="eq">Frecuencia: &nbsp; f₀ = (1/2π) √(k / J) , &nbsp; J = ½ m_d r_d² &nbsp; (disco)</div>
+<div class="eq">Ruido térmico: &nbsp; ⟨Δφ²⟩ = k_BT / k ; &nbsp; par mínimo: &nbsp; τ_n = √(4 k_BT k / (ω₀ Q)) &nbsp; [N·m/√Hz]</div>
+<div class="eq">Deformación máxima: &nbsp; ε = (w/2) |Δφ| / L &nbsp; ⇒ &nbsp; Δφ_y = 2 ε_y L / w</div>
+<div class="eq">Elástica: &nbsp; θ′ = κ₀(s) + m(s)/EI , &nbsp; m′ = F_x sen θ − F_y cos θ</div>
+<p style="font-size:12px;color:#9aa1ac">Numérica: la espiral de reposo es de Arquímedes; la forma bajo Δφ se calcula con la elástica completa (disparo y Newton con continuación en Δφ, paso 0.25 rad); contacto = mínima distancia entre puntos con separación de arco mayor que 5w igual a w.</p></details>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let mat='si';
+const MAT={si:{E:147e9,G:79.6e9,rho:2330,ey:0.02},sin:{E:250e9,G:100e9,rho:3100,ey:0.02}};
+const KB=1.380649e-23;
+function spiralPts(rin,b,turns,n,c){ c=c||0; // longitudes en µm
+  const th1=2*Math.PI*turns, s=new Float64Array(n),x=new Float64Array(n),y=new Float64Array(n),ang=new Float64Array(n),kap=new Float64Array(n),thv=new Float64Array(n);
+  // muestreo uniforme en θ, luego s por trapecio
+  let prev=0; for(let i=0;i<n;i++){const th=th1*i/(n-1), r=rin+b*(th+c*th*th/(4*Math.PI)), rp=b*(1+c*th/(2*Math.PI)), rpp=b*c/(2*Math.PI); thv[i]=th; x[i]=r*Math.cos(th); y[i]=r*Math.sin(th);
+    const tx=rp*Math.cos(th)-r*Math.sin(th), ty=rp*Math.sin(th)+r*Math.cos(th); ang[i]=Math.atan2(ty,tx); kap[i]=(r*r+2*rp*rp-r*rpp)/Math.pow(r*r+rp*rp,1.5);
+    const sp=Math.sqrt(r*r+rp*rp); s[i]=i?s[i-1]+0.5*(prev+sp)*(th1/(n-1)):0; prev=sp;}
+  // desenrollar el ángulo
+  for(let i=1;i<n;i++){let d=ang[i]-ang[i-1]; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI; ang[i]=ang[i-1]+d;}
+  return {s,x,y,ang,kap,L:s[n-1]};
+}
+function shape(P,dphi){ // par puro, exterior fijo
+  const n=P.s.length, th=new Float64Array(n), X=new Float64Array(n), Y=new Float64Array(n); const kk=i=>P.kap[i]+dphi/P.L;
+  th[n-1]=P.ang[n-1]; X[n-1]=P.x[n-1]; Y[n-1]=P.y[n-1];
+  for(let i=n-2;i>=0;i--){const ds=P.s[i+1]-P.s[i]; th[i]=th[i+1]-0.5*(kk(i)+kk(i+1))*ds; X[i]=X[i+1]-0.5*(Math.cos(th[i])+Math.cos(th[i+1]))*ds; Y[i]=Y[i+1]-0.5*(Math.sin(th[i])+Math.sin(th[i+1]))*ds;}
+  return {X,Y};
+}
+function minDist(P,S,excl,step){
+  const n=P.s.length; let best=1e9;
+  for(let i=0;i<n;i+=step){ for(let j=i+1;j<n;j+=step){ if(P.s[j]-P.s[i]<=excl)continue; const dx=S.X[i]-S.X[j],dy=S.Y[i]-S.Y[j],d=dx*dx+dy*dy; if(d<best)best=d; } }
+  return Math.sqrt(best);
+}
+// ---------- elástica completa (disparo + Newton, EI = 1, longitudes en µm) ----------
+const NE=1000;
+function elPrep(P){ const L=P.L, ds=L/(NE-1), k0=new Float64Array(NE); let j=0; for(let i=0;i<NE;i++){const sv=i*ds; while(j<P.s.length-2&&P.s[j+1]<sv)j++; const t=(sv-P.s[j])/(P.s[j+1]-P.s[j]||1); k0[i]=P.kap[j]+t*(P.kap[j+1]-P.kap[j]);} return {L,ds,k0,rin:Math.hypot(P.x[0],P.y[0]),th0:P.ang[0],x1:P.x[P.s.length-1],y1:P.y[P.s.length-1],th1:P.ang[P.s.length-1]}; }
+function elInt(E,phi,u,keep){
+  const ds=E.ds; let x=E.rin*Math.cos(phi), y=E.rin*Math.sin(phi), th=E.th0+phi, m=u[0]; const Fx=u[1],Fy=u[2];
+  const X=keep?new Float64Array(NE):null, Y=keep?new Float64Array(NE):null; if(keep){X[0]=x;Y[0]=y;}
+  const f=(i2,th_,m_)=>{ // i2: índice de curvatura (puede ser semientero)
+    const k=i2%1===0?E.k0[i2]:0.5*(E.k0[Math.floor(i2)]+E.k0[Math.ceil(i2)]); return [Math.cos(th_),Math.sin(th_),k+m_,Fx*Math.sin(th_)-Fy*Math.cos(th_)]; };
+  for(let i=0;i<NE-1;i++){
+    const a=f(i,th,m), b=f(i+0.5,th+0.5*ds*a[2],m+0.5*ds*a[3]), c=f(i+0.5,th+0.5*ds*b[2],m+0.5*ds*b[3]), d=f(i+1,th+ds*c[2],m+ds*c[3]);
+    x+=ds/6*(a[0]+2*b[0]+2*c[0]+d[0]); y+=ds/6*(a[1]+2*b[1]+2*c[1]+d[1]); th+=ds/6*(a[2]+2*b[2]+2*c[2]+d[2]); m+=ds/6*(a[3]+2*b[3]+2*c[3]+d[3]);
+    if(keep){X[i+1]=x;Y[i+1]=y;}
+  }
+  return {r:[x-E.x1,y-E.y1,th-E.th1],X,Y};
+}
+function elSolve(E,phi,u0){
+  let u=u0.slice();
+  for(let it=0;it<25;it++){
+    const r0=elInt(E,phi,u,false).r, nr=Math.hypot(...r0); if(nr<1e-8) {const o=elInt(E,phi,u,true); return {u,X:o.X,Y:o.Y};}
+    const J=[[0,0,0],[0,0,0],[0,0,0]]; for(let j=0;j<3;j++){const h=1e-6*(1+Math.abs(u[j])), up=u.slice(); up[j]+=h; const rj=elInt(E,phi,up,false).r; for(let i=0;i<3;i++)J[i][j]=(rj[i]-r0[i])/h;}
+    // resolver J d = -r0
+    const A=J.map((row,i)=>[...row,-r0[i]]);
+    for(let c=0;c<3;c++){let p=c; for(let i=c+1;i<3;i++)if(Math.abs(A[i][c])>Math.abs(A[p][c]))p=i; [A[c],A[p]]=[A[p],A[c]]; if(Math.abs(A[c][c])<1e-14)return null; for(let i=c+1;i<3;i++){const fct=A[i][c]/A[c][c]; for(let k=c;k<4;k++)A[i][k]-=fct*A[c][k];}}
+    const d=[0,0,0]; for(let i=2;i>=0;i--){let sum=A[i][3]; for(let k=i+1;k<3;k++)sum-=A[i][k]*d[k]; d[i]=sum/A[i][i];}
+    let lam=1; for(let k=0;k<3;k++)u[k]+=lam*d[k];
+    if(!isFinite(u[0]))return null;
+  }
+  const o=elInt(E,phi,u,true); return Math.hypot(...o.r)<1e-5?{u,X:o.X,Y:o.Y}:null;
+}
+let G=null;
+function compute(){
+  const m=MAT[mat], N=+$('N').value, R=+$('R').value, p=+$('p').value/1000, w=+$('w').value/1000, h=+$('h').value/1000, rd=+$('rd').value, td=+$('td').value/1000, T=+$('Tk').value, Q=Math.pow(10,+$('Q').value);
+  const cc=+$('C').value, rin=R-p*(N+cc*N*N/2), pmin=Math.min(p,p*(1+cc*N)), ok=rin>2*w&&pmin>w*1.05, b=p/(2*Math.PI);
+  if(!ok){G={ok:false,rin,N,R,p,w,pmin};return;}
+  const P=spiralPts(rin,b,N,360,cc);
+  const L=P.L*1e-6, I=(h*1e-6)*Math.pow(w*1e-6,3)/12, k=m.E*I/L;
+  const md=m.rho*Math.PI*Math.pow(rd*1e-6,2)*td*1e-6, J=0.5*md*Math.pow(rd*1e-6,2), f0=Math.sqrt(k/J)/(2*Math.PI);
+  let Js=0; for(let i=0;i<P.s.length-1;i++){const r2=Math.pow(0.5*(P.x[i]+P.x[i+1])*1e-6,2)+Math.pow(0.5*(P.y[i]+P.y[i+1])*1e-6,2); Js+=m.rho*(w*1e-6)*(h*1e-6)*((P.s[i+1]-P.s[i])*1e-6)*r2;} const ms=Js;
+  const Jef=J+0.187*Js, f0c=Math.sqrt(k/Jef)/(2*Math.PI); // 0.187: factor de inercia efectiva (elástica, espiral de referencia)
+  const phiRms=Math.sqrt(KB*T/k), tauN=Math.sqrt(4*KB*T*k/(2*Math.PI*f0c*Q));
+  // modos fuera del plano (Castigliano, orden de magnitud): carga en el eje, momento por unidad de fuerza en cada punto
+  const Em=m.E,Gm=m.G,wm=w*1e-6,hm=h*1e-6, Ib=wm*Math.pow(hm,3)/12, aa=Math.max(wm,hm), bb=Math.min(wm,hm), Jt=aa*Math.pow(bb,3)*(1/3-0.21*(bb/aa)*(1-Math.pow(bb/aa,4)/12));
+  let comp=0; for(let i=0;i<P.s.length-1;i++){const dsu=P.s[i+1]-P.s[i], dsm=dsu*1e-6, tx=(P.x[i+1]-P.x[i])/dsu, ty=(P.y[i+1]-P.y[i])/dsu, dx=-0.5*(P.x[i]+P.x[i+1])*1e-6, dyy=-0.5*(P.y[i]+P.y[i+1])*1e-6, Mx=dyy, My=-dx, Tw=Mx*tx+My*ty, Mb=-Mx*ty+My*tx; comp+=Mb*Mb/(Em*Ib)*dsm+Tw*Tw/(Gm*Jt)*dsm;}
+  const kz=1/comp, fz=0.96*Math.sqrt(kz/md)/(2*Math.PI), kt=1/(0.5*L*(1/(Gm*Jt)+1/(Em*Ib))), It=md*Math.pow(rd*1e-6,2)/4+md*Math.pow(td*1e-6,2)/12, ft=Math.sqrt(kt/It)/(2*Math.PI);
+  const dy=2*m.ey*P.L/w; // rad (L y w en µm, razón adimensional)
+  // ángulo de contacto: barrido
+  const gap=pmin-w; const excl=5*w; let dcP=null,dcM=null; const El=elPrep(P), cache={pos:[],neg:[]}; const sPts=new Float64Array(NE); for(let i=0;i<NE;i++)sPts[i]=i*El.ds;
+  const scan=(sg,store)=>{let u=[0,0,0]; let dprev=null,phprev=0,found=null;
+    for(let kk=0;kk<=60;kk++){const a=sg*0.25*kk; const sol=elSolve(El,a,u); if(!sol){break;} u=sol.u; store.push({phi:a,u:sol.u.slice()});
+      const d=minDist({s:sPts,L:El.L},{X:sol.X,Y:sol.Y},excl,2); if(found===null&&dprev!==null&&d<w){found=phprev+(dprev-w)/(dprev-d)*(a-phprev); break;} dprev=d; phprev=a;}
+    return found;};
+  dcP=scan(+1,cache.pos); dcM=scan(-1,cache.neg);
+  G={ok:true,P,L,I,k,md,J,f0,f0c,Jef,fz,ft,kz,kt,ms,phiRms,tauN,dy,dcP,dcM,gap,rin,m,T,Q,N,R,p,w,h,El,cache,sPts};
+}
+function elAt(phi){ if(!G.ok)return null; const arr=phi>=0?G.cache.pos:G.cache.neg; const idx=Math.min(Math.floor(Math.abs(phi)/0.25),arr.length-1); const u0=idx>=0&&arr[idx]?arr[idx].u:[0,0,0]; const sol=elSolve(G.El,phi,u0); return sol?{X:sol.X,Y:sol.Y,u:sol.u}:null; }
+function drawSpiral(){
+  const cv=$('cs'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height; x.clearRect(0,0,W,Hh);
+  if(!G.ok){x.fillStyle='#e59ab0';x.font='14px sans-serif';x.fillText('Geometría imposible: el radio interior ('+G.rin.toFixed(2)+' µm) debe ser mayor que 2w y el paso mínimo ('+(G.pmin*1000).toFixed(0)+' nm) mayor que w. Reduce N, p, c o w.',20,40);return;}
+  const dphi=+$('dphi').value; let S=elAt(dphi), approx=false; if(!S){S=shape(G.P,dphi);approx=true;} const sArr=approx?G.P.s:G.sPts, n=sArr.length;
+  const md=minDist({s:sArr},S,5*G.w,2), touch=md<=G.w+1e-9;
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for(let i=0;i<n;i++){x0=Math.min(x0,S.X[i]);x1=Math.max(x1,S.X[i]);y0=Math.min(y0,S.Y[i]);y1=Math.max(y1,S.Y[i]);}
+  const R0=G.R*1.05; const sc=Math.min((W-40)/(2*R0),(Hh-40)/(2*R0)); const cx=W/2,cy=Hh/2;
+  // anillo guía exterior y disco
+  x.strokeStyle='#262b35';x.lineWidth=1;x.beginPath();x.arc(cx,cy,G.R*sc,0,7);x.stroke();
+  const wpx=Math.max(1.5,Math.min(9,G.w/1000*sc));
+  x.lineCap='round';x.lineWidth=wpx;x.strokeStyle=touch?'#d9626f':'#5ec8d8';x.beginPath();for(let i=0;i<n;i++){const px=cx+S.X[i]*sc,py=cy-S.Y[i]*sc; i?x.lineTo(px,py):x.moveTo(px,py);}x.stroke();
+  x.fillStyle='#e8985e';x.beginPath();x.arc(cx+S.X[0]*sc,cy-S.Y[0]*sc,5,0,7);x.fill();
+  x.fillStyle='#9aa1ac';x.font='12px sans-serif';x.fillText('● extremo interior (unido al disco)',12,18);x.fillText('mínima distancia entre vueltas: '+(md*1000).toFixed(0)+' nm (hilo: '+(G.w*1000).toFixed(0)+' nm)',12,36);
+  if(touch){x.fillStyle='#e59ab0';x.fillText('¡las vueltas se tocan!',12,54);} if(approx){x.fillStyle='#e8985e';x.fillText('(forma aproximada: la elástica no convergió a este ángulo)',12,72);}
+}
+function drawM(){
+  const cv=$('cm'),x=cv.getContext('2d'),W=cv.width,Hh=cv.height; x.clearRect(0,0,W,Hh); if(!G.ok)return;
+  const L0=60,R0=14,T0=14,B0=30, A=12; const X=a=>L0+(W-L0-R0)*(a+A)/(2*A);
+  const Mmax=G.k*A, Y=m=>T0+(Hh-T0-B0)*(0.5-m/(2*Mmax));
+  const zone=(a0,a1,c)=>{x.fillStyle=c;x.fillRect(X(a0),T0,X(a1)-X(a0),Hh-T0-B0);};
+  if(G.dcP!=null&&G.dcP<A)zone(G.dcP,A,'rgba(217,98,111,0.18)'); if(G.dcM!=null&&G.dcM>-A)zone(-A,G.dcM,'rgba(217,98,111,0.18)');
+  if(G.dy<A){zone(G.dy,A,'rgba(232,152,94,0.18)'); zone(-A,-G.dy,'rgba(232,152,94,0.18)');}
+  x.strokeStyle='#262b35';x.lineWidth=1;x.beginPath();x.moveTo(L0,Y(0));x.lineTo(W-R0,Y(0));x.moveTo(X(0),T0);x.lineTo(X(0),Hh-B0);x.stroke();
+  x.strokeStyle='#2a78d6';x.lineWidth=2;x.beginPath();x.moveTo(X(-A),Y(-Mmax));x.lineTo(X(A),Y(Mmax));x.stroke();
+  const EI=G.m.E*G.I; x.fillStyle='rgba(94,200,216,0.9)'; [...G.cache.pos,...G.cache.neg].forEach(c=>{ if(c.phi===0)return; x.beginPath(); x.arc(X(c.phi),Y(-EI*c.u[0]*1e6),2.2,0,7); x.fill(); });
+  const a=+$('dphi').value; x.fillStyle='#eb6834';x.beginPath();x.arc(X(a),Y(G.k*a),5,0,7);x.fill();
+  x.fillStyle='#9aa1ac';x.font='11px sans-serif';for(let g=-12;g<=12;g+=4)x.fillText(g,X(g)-6,Hh-14);x.fillText('Δφ (rad)',W/2-20,Hh-1);
+  x.fillText((Mmax*1e12).toFixed(2)+' pN·m',4,Y(Mmax)+4);x.fillText('−'+(Mmax*1e12).toFixed(2),4,Y(-Mmax)+4);
+}
+const fmt=(v,u)=>{const a=Math.abs(v); return (a>=1e3||a<0.01&&a>0)?v.toExponential(2)+' '+u:v.toFixed(3)+' '+u;};
+function table(){
+  if(!G.ok){$('tcal').innerHTML='';$('pnote').innerHTML='<b>Geometría imposible:</b> el radio interior debe ser mayor que 2w y el paso mínimo mayor que w.';return;}
+  const g=G, rows=[]; const tw=2*Math.PI;
+  rows.push(['Longitud del hilo L',(g.L*1e6).toFixed(1)+' µm']);
+  rows.push(['Radio interior',g.rin.toFixed(2)+' µm'+(Math.abs(+$('C').value)>0?'  (paso del último giro: '+(g.p*(1+(+$('C').value)*g.N)*1000).toFixed(0)+' nm)':'')]);
+  rows.push(['Holgura entre vueltas p − w',(g.gap*1000).toFixed(0)+' nm']);
+  rows.push(['Rigidez de torsión k = EI/L',g.k.toExponential(2)+' N·m/rad']);
+  rows.push(['Frecuencia de resonancia f₀ (solo disco)',(g.f0>=1e6?(g.f0/1e6).toFixed(3)+' MHz':(g.f0/1e3).toFixed(2)+' kHz')]);
+  rows.push(['Inercia del resorte (giro rígido) / inercia del disco',(g.ms/g.J).toFixed(2)+'  (la inercia efectiva es ≈ 0.19 de eso)']);
+  rows.push(['f₀ con la inercia efectiva del resorte',(g.f0c>=1e6?(g.f0c/1e6).toFixed(3)+' MHz':(g.f0c/1e3).toFixed(2)+' kHz')]);
+  rows.push(['Modo vertical (Castigliano × 0.96, ajustado al modelo 3D del informe)',(g.fz/1e3).toFixed(0)+' kHz'+(g.fz<g.f0c?'  (¡por debajo de f₀!)':'')]);
+  rows.push(['Modo de inclinación (Castigliano; el modelo 3D da de 0 a 4 % más)',(g.ft/1e3).toFixed(0)+' kHz'+(g.ft<g.f0c?'  (¡por debajo de f₀!)':'')]);
+  rows.push(['Margen modo vertical / f₀ (en el modelo 3D: 0.91 con hilo cuadrado, 1.12–1.14 con hilo más alto que ancho)',(g.fz/g.f0c).toFixed(2)]);
+  rows.push(['Ángulo térmico rms √(k_BT/k)',(g.phiRms*1e3).toFixed(3)+' mrad']);
+  rows.push(['Par mínimo detectable (Q supuesto)',(g.tauN*1e21).toFixed(2)+' zN·m/√Hz  ('+g.tauN.toExponential(2)+' N·m/√Hz)']);
+  rows.push(['Ángulo hasta el contacto, apretando (+), elástica',g.dcP==null?'> 15 rad':g.dcP.toFixed(2)+' rad ('+(g.dcP/tw).toFixed(2)+' vueltas)']);
+  rows.push(['Ángulo hasta el contacto, aflojando (−), elástica',g.dcM==null?'no hay hasta −15 rad':g.dcM.toFixed(2)+' rad']);
+  rows.push(['Ángulo hasta el límite del material (2 %)',g.dy.toFixed(1)+' rad ('+(g.dy/tw).toFixed(2)+' vueltas)']);
+  rows.push(['Rotura mínima ε_y para que el contacto mande (apretando / aflojando)',(g.dcP==null?'—':(g.dcP*g.w/(2*g.P.L)*100).toFixed(2)+' %')+' / '+(g.dcM==null?'—':(-g.dcM*g.w/(2*g.P.L)*100).toFixed(2)+' %')]);
+  const lim=Math.min(g.dcP==null?1e9:g.dcP,g.dcM==null?1e9:-g.dcM,g.dy); rows.push(['Rango útil simétrico (el menor de los tres límites)',(lim>=15?'> 15':lim.toFixed(2))+' rad']);
+  {const mu=+$('mu').value; $('muv').textContent=mu.toFixed(1); const T=[[0,1],[0.2,1.013],[0.5,1.038],[1,1.105]]; let r=1; for(let i=1;i<T.length;i++){ if(mu<=T[i][0]){ r=T[i-1][1]+(T[i][1]-T[i-1][1])*(mu-T[i-1][0])/(T[i][0]-T[i-1][0]); break; } }
+  rows.push(['Después del contacto (modelo de juguete, solo espiral de referencia)', mu===0 ? 'sin fricción la rigidez no aumenta (pendiente igual dentro de 3 % hasta +11.5 y −6.5 rad)' : 'con fricción de Coulomb μ = '+mu.toFixed(1)+' el par a −6 rad sube ×'+r.toFixed(3)+' respecto a sin fricción (interpolado de 0.2/0.5/1.0), y un ciclo disipa ≈ 2 % de la energía elástica máxima (μ = 0.5)']);
+  rows.push(['Con adherencia (enlace que se rompe a una fuerza máxima)','la rigidez sube ×1.16 a ×1.58 en −4.5 … −6.25 rad según el umbral; mide el pegado real antes de fiarte de ello']);}
+  rows.push(['Par máximo útil (simétrico)',(g.k*Math.min(lim,15)*1e12).toFixed(2)+' pN·m']);
+  $('tcal').innerHTML=rows.map(r=>`<tr><td style="text-align:left">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
+  const warn=[]; if(g.w>g.p*0.9)warn.push('el hilo casi llena el paso (w ≈ p)'); if(Math.min(g.dcP==null?1e9:g.dcP,g.dcM==null?1e9:-g.dcM)<g.dy)warn.push('el contacto entre vueltas llega antes que el límite del material: el rango lo manda la geometría'); else warn.push('el límite del material llega antes que el contacto: el rango lo manda el espesor w');
+  if(g.fz<g.f0c)warn.push('el modo vertical estimado ('+(g.fz/1e3).toFixed(0)+' kHz) queda por debajo de f₀: f₀ solo vale si ese modo queda arriba (prueba h > w)');
+  if(g.h<g.w/2)warn.push('h pequeño frente a w: conviene revisar el modelo en 2D/3D (la flexión fuera del plano puede dominar)');
+  $('pnote').innerHTML='<b>Lectura:</b> '+warn.join('; ')+'.';
+}
+function refresh(){
+  $('Nv').textContent=$('N').value;$('Rv').textContent=(+$('R').value).toFixed(1);$('pv').textContent=$('p').value;$('cv2').textContent=(+$('C').value).toFixed(2);$('wv').textContent=$('w').value;$('hv').textContent=$('h').value;$('rdv').textContent=(+$('rd').value).toFixed(1);$('tdv').textContent=$('td').value;$('Kv').textContent=$('Tk').value;$('Qv').textContent=Math.round(Math.pow(10,+$('Q').value));
+  compute(); const a=+$('dphi').value; $('dpv').textContent=a.toFixed(2); $('dpt').textContent=(a/(2*Math.PI)).toFixed(2);
+  $('head').innerHTML=G.ok?`k = <b>${G.k.toExponential(2)}</b> N·m/rad &nbsp;·&nbsp; f₀ = <b>${G.f0>=1e6?(G.f0/1e6).toFixed(2)+' MHz':(G.f0/1e3).toFixed(1)+' kHz'}</b> &nbsp;·&nbsp; L = <b>${(G.L*1e6).toFixed(1)}</b> µm`:'Geometría imposible';
+  drawSpiral();drawM();table();
+}
+['N','R','p','C','w','h','rd','td','Tk','Q','mu'].forEach(id=>$(id).oninput=refresh);
+$('dphi').oninput=()=>{const a=+$('dphi').value;$('dpv').textContent=a.toFixed(2);$('dpt').textContent=(a/(2*Math.PI)).toFixed(2);drawSpiral();drawM();};
+document.querySelectorAll('button[data-mat]').forEach(b=>b.onclick=()=>{mat=b.dataset.mat;document.querySelectorAll('button[data-mat]').forEach(o=>o.classList.toggle('on',o===b));refresh();});
+refresh();
+window.__sim={get G(){return G;},refresh,minDist,shape,spiralPts};
+</script></body></html>
